@@ -1,294 +1,154 @@
-# Da Reunião ao Documento: Design Docs Gerados por IA
+# Da Reunião ao Documento: pacote de design docs do Sistema de Webhooks de Notificação de Pedidos
 
-## Descrição
+> O enunciado original do desafio está em [`ENUNCIADO.md`](ENUNCIADO.md).
 
-Neste desafio você vai transformar a transcrição de uma reunião técnica em um pacote completo de design docs, usando IA como ferramenta principal de produção.
+## Sobre o desafio
 
-**Cenário:** uma empresa que opera um Order Management System (OMS) em produção vai construir uma nova feature, um Sistema de Webhooks de Notificação de Pedidos. A decisão técnica já foi tomada em uma reunião entre tech lead, PM, engenheiros e segurança, mas nada foi registrado além da transcrição da call (`TRANSCRICAO.md`).
+A partir da transcrição de uma reunião técnica de cerca de 55 minutos ([`TRANSCRICAO.md`](TRANSCRICAO.md)) e do código de um Order Management System (OMS) em Node.js, TypeScript, Prisma e MySQL, a tarefa é produzir a documentação técnica de uma feature que ainda não existe no código: webhooks que notificam clientes B2B quando o status de um pedido muda. O pacote tem PRD, RFC, FDD, ADRs e um Tracker de rastreabilidade, e deve ser acionável o suficiente para o time começar a implementar.
 
-**Sua tarefa:** produzir, a partir da transcrição e do código existente, a documentação técnica da feature, em nível acionável o suficiente para o time de engenharia iniciar a implementação.
+A parte difícil não é escrever, é filtrar e rastrear. Nem tudo que foi dito na reunião vira requisito: houve itens descartados (exactly-once, Redis, dashboard) e adiados (e-mail de alerta, rate limiting). E nada pode ser inventado sem origem identificável na transcrição ou no código. Não alterei `src/`, `prisma/`, `tests/` nem configurações: a entrega é só documental.
 
-## Sobre o uso de IA
+## Ferramentas de IA utilizadas
 
-A IA é sua ferramenta principal de produção neste desafio. Você vai usá-la para ler o código, analisar a transcrição, estruturar os documentos e gerar o conteúdo final. O que se espera de você é o papel de maestro: definir o que precisa ser feito, formular bons prompts, revisar criticamente o que a IA entrega, corrigir e refinar até o resultado ficar consistente.
+| Ferramenta | Papel |
+| --- | --- |
+| **Claude Code** (modelo Claude Sonnet 5.5) | Ferramenta principal: leu o código e a transcrição, extraiu e classificou os pontos, planejou, escreveu os documentos e rodou as verificações de consistência. |
+| **Plugin `project-analizer`** (marketplace `fullcycle-claude-marketplace`, comando `/project-analizer:generate-architectural-report`) | Orquestrou três agentes: `dependency-auditor` (auditoria de dependências), `architectural-analyzer` (análise de arquitetura, com 23 componentes) e `component-deep-analyzer` (uma análise por componente). Os relatórios ficam em `docs/agents/`. |
+| **Subagentes do Claude Code** | Executaram em paralelo as análises do plugin (até 20 simultâneos). |
 
-## Estrutura do desafio
+## Workflow adotado
 
-O desafio consiste em produzir um **pacote de design docs**: PRD, RFC, FDD, ADRs, Tracker e o README do processo a partir da transcrição e do código.
+A ordem seguiu a sugestão do enunciado (decisões primeiro, PRD por último entre os documentos grandes), com duas etapas de preparação antes:
 
-## Objetivo
+1. **Extração dirigida da transcrição → [`docs/SUMMARY.md`](docs/SUMMARY.md).** Cada fala foi classificada em oito categorias com identificadores (`REQ`, `DEC`, `PTD`, `RES`, `SCL`, `STD`, `POS`, `DIS`), com o falante, o timestamp e um link para a linha. As categorias `POS` (adiado) e `DIS` (descartado) existem para impedir que o que ficou de fora vire requisito. O arquivo termina com observações sobre lacunas que a reunião deixou.
+2. **Mapeamento do código → [`docs/agents/`](docs/agents/).** O comando do plugin gerou a auditoria de dependências, o relatório de arquitetura e 23 análises de componentes, mais um `MANIFEST.md`, um resumo (`PROJECT-OVERVIEW`) e um índice. Serviram para ancorar os documentos em caminhos de arquivo reais.
+3. **Geração dos templates**: A partir de exemplos utilizados no curso e outros utilizados em projetos externos, utilizando o Google Gemini, extraí um esqueleto (template) para cada tipo de documento a ser gerado.
+4. **Plano.** Antes de escrever, li o enunciado e os templates em [`docs/templates/`](docs/templates/) e montei um plano de geração com a ordem e as dependências entre documentos.
+5. **ADRs → RFC → FDD → PRD → Tracker → README.** Cada documento consumiu os anteriores: o RFC linka os ADRs, o FDD detalha o que o RFC propõe, o PRD consolida, e o Tracker varre os documentos prontos.
+6. **Centralização das referências no Tracker.** Numa segunda passada, simplifiquei os documentos: as citações de origem (timestamps e links para a transcrição) saíram do texto do PRD, do RFC, do FDD e dos ADRs, e cada item relevante passou a ter um identificador (`PRD-FR-01`, `RFC-ALT-02`, `FDD-INT-03`, `ADR-004-D1`...). O [`docs/TRACKER.md`](docs/TRACKER.md) liga cada identificador à fala da reunião (`[hh:mm] Nome` e link para a linha) ou ao arquivo do código.
+7. **Verificação automatizada** (script somente de leitura): conferência de que todos os IDs dos documentos têm linha no Tracker (e vice-versa), de que cada `[hh:mm] Nome` do Tracker existe na transcrição com a linha certa, de que os caminhos de arquivo existem, além de seções obrigatórias, links internos e contagens.
 
-Entregar, em um repositório público no GitHub (fork do repositório base), o seguinte pacote de documentação:
+Convenção de honestidade nos documentos: o que não veio da reunião está marcado como **(derivação técnica)** ou aparece como *lacuna identificada na análise*, e não como decisão. No Tracker, esses itens têm o tipo "Derivação técnica" ou "Questão em aberto (lacuna)".
 
-- PRD (Product Requirement Document) da feature
-- RFC (Request for Comments) com a proposta técnica da solução, submetida à equipe para revisão
-- FDD (Feature Design Document) da feature
-- Entre 5 e 8 ADRs (Architecture Decision Records) das decisões discutidas
-- Tracker de rastreabilidade ligando cada item à origem na transcrição ou no código
-- README atualizado documentando o processo de produção
+## Prompts customizados
 
-Toda informação registrada nos documentos deve ser rastreável à transcrição ou ao código fonte da aplicação. Não é permitido inventar requisitos, decisões ou restrições sem origem identificável.
+**1. Extração dirigida da transcrição** (gerou `docs/SUMMARY.md`):
 
-### O pacote de documentos e o papel de cada um
+```text
+Analise o conteudo do arquivo @TRANSCRICAO.md. Identifique, dentre o que foi discutido,
+os seguintes pontos:
 
-Os documentos não se repetem: cada um opera em uma **altura** diferente. Antes de produzir, entenda a fronteira entre eles: conteúdo duplicado entre documentos é sinal de que algo está no lugar errado.
+- requisitos funcionais levantados (`REQ`);
+- as decisoes tomadas (`DEC`);
+- as definicoes tecnicas principais (`PTD`);
+- as restricoes (`RES`);
+- ganchos para o codigo ja pre-existente (`SCL`);
+- detalhes tecnicos secundarios (`STD`);
+- pontos adiados para fases futuras (`POS`); e
+- pontos descartados (`DIS`).
 
-| Documento | Papel | Altura | Pergunta que responde |
-| --- | --- | --- | --- |
-| **PRD** | Problema, público, escopo e métricas de sucesso | Produto / negócio | *Por que e o quê?* |
-| **RFC** | Proposta técnica da solução para revisão: abordagem geral, alternativas e questões em aberto | Arquitetura | *Como pretendemos resolver, e o que ainda está em aberto?* |
-| **ADRs** | Cada decisão arquitetural isolada, com contexto e consequências | Decisão pontual | *Por que decidimos exatamente assim?* |
-| **FDD** | Especificação de implementação: fluxos, contratos, erros, integração com o código | Implementação | *Como construir, em detalhe?* |
-| **Tracker** | Rastreabilidade de cada item ao código ou à transcrição | Transversal | *De onde veio cada coisa?* |
+De um identificador para cada um dos pontos identificados, seguindo o formato
+`PREFIXO` + `-` + `NUMERO` (incremental POR prefixo).
 
-Em uma frase: o **RFC propõe e abre para revisão**, os **ADRs registram cada decisão fechada** e o **FDD detalha como construir**. O RFC é conciso (2 a 4 páginas) e fala em decisão; o FDD é profundo e fala em implementação. Não repita no RFC o nível de detalhe do FDD.
+Organize os pontos em tabelas, com uma coluna para o identificador, uma coluna para uma
+descricao do ponto, uma coluna com o timestamp da fala e o nome de quem eh a fala, e uma
+coluna com um link para a linha da fala no arquivo.
 
-## Contexto
-
-### A aplicação existente
-
-O repositório base contém uma aplicação Node.js + TypeScript funcional: um Order Management System com módulos de autenticação, usuários, clientes, produtos e pedidos. Banco MySQL via Prisma. O ciclo de vida do pedido tem máquina de estados controlada, controle transacional de estoque e auditoria de mudanças de status.
-
-A aplicação não tem nenhum mecanismo de notificação externa, eventos, filas ou webhooks. Esse vácuo é proposital. É exatamente o que a feature discutida na reunião pretende preencher.
-
-Seus documentos vão precisar referenciar componentes do código existente, como a estrutura modular, a máquina de estados, a transação do `changeStatus`, as classes de erro, o padrão de códigos de erro, o middleware `requireRole`, o error middleware centralizado e o logger Pino. Use a IA para mapear esses pontos a partir do código.
-
-### A transcrição
-
-O arquivo `TRANSCRICAO.md` contém a gravação literal da reunião técnica. Cinco participantes discutem por aproximadamente 55 minutos no formato `[hh:mm] Nome: fala`.
-
-A transcrição inclui decisões fechadas, requisitos funcionais explícitos, restrições, ganchos com o código existente, pontos descartados ou adiados para fases futuras e detalhes técnicos secundários. Nem tudo que foi mencionado vira requisito. Algumas coisas foram explicitamente descartadas, outras foram adiadas. Identificar o que NÃO entra é tão importante quanto identificar o que entra. Use a IA com prompts dirigidos para fazer essa filtragem, não pedidos genéricos.
-
-## Tecnologias e ferramentas
-
-Liberdade total na escolha de ferramentas de IA. Você pode usar qualquer combinação de Claude, ChatGPT, Cursor, Copilot Chat, Gemini, agentes, prompts customizados, skills ou plugins. Aproveite os prompts e plugins disponibilizados pelo professor durante o curso como ponto de partida.
-
-Os documentos devem ser entregues em formato Markdown.
-
-A entrega é puramente documental: você não deve mexer no código da aplicação (`src/`, `prisma/`, `tests/`, configurações). O código serve de contexto e referência.
-
-## Requisitos
-
-### 1. PRD da feature
-
-Produza o arquivo `docs/PRD.md` cobrindo a feature de Sistema de Webhooks de Notificação de Pedidos. O PRD deve seguir o formato apresentado no curso e incluir, no mínimo, as seguintes seções:
-
-- Resumo e contexto da feature
-- Problema e motivação
-- Público-alvo e cenários de uso
-- Objetivos e métricas de sucesso
-- Escopo (incluso e fora de escopo)
-- Requisitos funcionais
-- Requisitos não funcionais
-- Decisões e trade-offs principais
-- Dependências
-- Riscos e mitigação
-- Critérios de aceitação
-- Estratégia de testes e validação
-
-A seção "Fora de escopo" deve listar explicitamente pelo menos 2 itens descartados ou adiados durante a reunião.
-
-### 2. RFC da feature
-
-Produza o arquivo `docs/RFC.md` com a proposta técnica da solução, no formato de um documento submetido à equipe para revisão. O RFC opera em nível de arquitetura: apresenta a abordagem escolhida, as alternativas que foram colocadas na mesa e as questões deixadas em aberto. É um documento conciso (2 a 4 páginas); o detalhamento de implementação fica no FDD. Deve seguir o formato apresentado no curso e incluir, no mínimo:
-
-- Metadados (autor, status, data, revisores); use os participantes da reunião como revisores
-- Resumo executivo (TL;DR) da proposta
-- Contexto e problema
-- Proposta técnica (visão geral da solução, sem descer ao detalhe de implementação do FDD)
-- Alternativas consideradas (pelo menos 2 alternativas reais discutidas e descartadas na reunião, cada uma com o trade-off que levou ao descarte)
-- Questões em aberto (pelo menos 2 pontos levantados na reunião e não decididos ou adiados)
-- Impacto e riscos
-- Decisões relacionadas (links para os ADRs correspondentes)
-
-O RFC não deve duplicar o detalhamento do FDD. Ele responde "o que propomos e por quê"; o "como construir" em detalhe fica no FDD.
-
-### 3. FDD da feature
-
-Produza o arquivo `docs/FDD.md` detalhando o "como implementar" da feature. O FDD é o documento mais técnico e precisa estar acionável o suficiente para um desenvolvedor pegar e começar a codar. Deve seguir o formato apresentado no curso e incluir, no mínimo:
-
-- Contexto e motivação técnica
-- Objetivos técnicos
-- Escopo e exclusões
-- Fluxos detalhados (criação do evento na outbox, processamento pelo worker, retry, DLQ)
-- Contratos públicos (endpoints HTTP com payloads de exemplo, headers, status codes, semântica)
-- Matriz de erros previstos com códigos no padrão `WEBHOOK_*`
-- Estratégias de resiliência (timeouts, retries, backoff, fallback)
-- Observabilidade (métricas, logs, tracing)
-- Dependências e compatibilidade
-- Critérios de aceite técnicos
-- Riscos e mitigação
-
-Seção obrigatória adicional, específica deste desafio: **"Integração com o sistema existente"**. Esta seção deve nomear pelo menos 4 caminhos de arquivo reais do código base e descrever como o módulo de webhooks vai se integrar com cada um (por exemplo, como o método `changeStatus` será estendido, como as classes de erro existentes serão reutilizadas).
-
-### 4. ADRs
-
-Produza entre 5 e 8 ADRs em arquivos separados dentro de `docs/adrs/`, nomeados no formato `ADR-NNN-titulo-em-kebab-case.md` (ex: `ADR-001-outbox-no-mysql.md`).
-
-Cada ADR deve seguir o formato MADR (ou variante padrão) com no mínimo as seções: Status, Contexto, Decisão, Alternativas Consideradas (pelo menos 1 alternativa real discutida ou plausível), Consequências (positivas e negativas, com trade-off explícito).
-
-Pelo menos 1 ADR deve referenciar explicitamente arquivos, módulos ou padrões do código existente.
-
-O conjunto de ADRs deve cobrir, no mínimo, 5 das 6 decisões principais discutidas na reunião:
-
-- Padrão Outbox no MySQL
-- Política de retry com backoff e DLQ
-- Autenticação HMAC-SHA256 com secret por endpoint
-- Garantia at-least-once com `X-Event-Id`
-- Worker em processo separado em polling
-- Reuso dos padrões existentes do projeto
-
-Decisões técnicas secundárias (formato de payload, timeouts, headers, entre outras) podem virar ADRs adicionais ou ficar apenas no FDD, conforme você considerar mais adequado.
-
-### 5. Tracker de Rastreabilidade
-
-Produza o arquivo `docs/TRACKER.md`, uma tabela markdown que mapeia cada item registrado nos seus documentos à origem na transcrição ou no código. O tracker funciona como uma referência cruzada: permite que qualquer leitor entenda de onde veio cada decisão, requisito ou restrição, e garante que a documentação está alinhada com o que foi efetivamente discutido e com o que existe no código.
-
-O tracker não é um conceito padrão do mercado nem é um documento abordado diretamente no curso. É uma exigência específica deste desafio que ajuda a manter a integridade da documentação contra alucinações da IA.
-
-Formato obrigatório da tabela:
-
-| ID | Documento | Tipo | Conteúdo (resumo) | Fonte | Localização |
-| --- | --- | --- | --- | --- | --- |
-|  |  |  |  |  |  |
-
-Onde:
-
-- **ID**: identificador único do item (ex: PRD-FR-01, RFC-ALT-02, FDD-CONTRATO-03, ADR-002)
-- **Documento**: arquivo onde o item aparece (`docs/PRD.md`, `docs/RFC.md`, `docs/FDD.md`, `docs/adrs/ADR-002-...md`)
-- **Tipo**: Requisito Funcional, Requisito Não Funcional, Decisão, Restrição, Trade-off, entre outros
-- **Conteúdo (resumo)**: descrição de uma linha do item
-- **Fonte**: `TRANSCRICAO` ou `CODIGO`
-- **Localização**: para `TRANSCRICAO`, timestamp + nome do falante (ex: `[09:17] Diego`). Para `CODIGO`, caminho do arquivo (ex: `src/modules/orders/order.service.ts`).
-
-Cobertura mínima: pelo menos 80% dos itens identificáveis nos seus documentos devem ter linha correspondente no tracker.
-
-### 6. README com o processo
-
-O `README.md` na raiz do repositório base contém este enunciado. Substitua o conteúdo dele pela documentação do seu processo de produção. Você pode manter um link ou seção fazendo referência ao enunciado original se quiser, mas o foco do novo conteúdo é descrever sua jornada.
-
-Estrutura obrigatória do novo README:
-
-- **Sobre o desafio**: 1 a 2 parágrafos descrevendo a tarefa em suas palavras
-- **Ferramentas de IA utilizadas**: lista das ferramentas que você usou, com breve nota sobre o papel de cada uma
-- **Workflow adotado**: como você organizou o trabalho. Em que ordem produziu os documentos, como organizou a interação com a IA
-- **Prompts customizados**: pelo menos 2 prompts relevantes que você escreveu ou adaptou, mostrados em blocos de código
-- **Iterações e ajustes**: descreva os principais momentos em que a IA gerou algo errado ou superficial e você teve que corrigir. Quantas iterações principais até chegar ao resultado final
-- **Como navegar a entrega**: caminho dos arquivos entregues e ordem sugerida de leitura
-
----
-
-## Critérios de Aceite
-
-A entrega é avaliada contra os critérios abaixo. Todos são obrigatórios.
-
-### PRD (`docs/PRD.md`)
-
-- ☐ Arquivo existe e está em Markdown
-- ☐ Contém todas as seções obrigatórias listadas no requisito 1
-- ☐ Identifica no mínimo 8 requisitos funcionais discutidos na reunião
-- ☐ Inclui pelo menos 1 objetivo com métrica e meta quantitativa
-- ☐ Seção "Fora de escopo" lista pelo menos 2 itens explicitamente descartados ou adiados na reunião
-- ☐ Seção "Riscos" inclui pelo menos 2 riscos com probabilidade, impacto e mitigação
-
-### RFC (`docs/RFC.md`)
-
-- ☐ Arquivo existe e está em Markdown
-- ☐ Contém todas as seções obrigatórias listadas no requisito 2
-- ☐ Seção "Alternativas consideradas" lista pelo menos 2 alternativas descartadas na reunião, cada uma com o trade-off que motivou o descarte
-- ☐ Seção "Questões em aberto" lista pelo menos 2 pontos adiados ou não decididos na reunião
-- ☐ Referencia, com link, pelo menos 2 ADRs do pacote
-
-### FDD (`docs/FDD.md`)
-
-- ☐ Arquivo existe e está em Markdown
-- ☐ Contém todas as seções obrigatórias listadas no requisito 3
-- ☐ Seção "Contratos públicos" inclui pelo menos 4 endpoints HTTP com payload de exemplo (request e response) e status codes
-- ☐ Matriz de erros usa códigos com prefixo `WEBHOOK_`
-- ☐ Seção "Integração com o sistema existente" referencia pelo menos 4 caminhos de arquivo reais do código base
-- ☐ Seção "Observabilidade" cita métricas, logs e tracing
-
-### ADRs (`docs/adrs/ADR-NNN-*.md`)
-
-- ☐ Pasta `docs/adrs/` contém entre 5 e 8 arquivos no formato `ADR-NNN-titulo-em-kebab-case.md`
-- ☐ Cada ADR contém as seções Status, Contexto, Decisão, Alternativas Consideradas, Consequências
-- ☐ O conjunto cobre pelo menos 5 das 6 decisões principais listadas no requisito 4
-- ☐ Pelo menos 1 ADR referencia explicitamente arquivos, módulos ou classes do código base
-
-### Tracker (`docs/TRACKER.md`)
-
-- ☐ Arquivo existe e segue o formato de tabela definido no requisito 5
-- ☐ Pelo menos 80% dos itens identificáveis dos documentos têm linha correspondente
-- ☐ Pelo menos 70% das linhas têm Fonte = `TRANSCRICAO` com timestamp válido no formato `[hh:mm] Nome`
-- ☐ Pelo menos 5 linhas têm Fonte = `CODIGO` com caminho de arquivo real
-
-### README (`README.md`)
-
-- ☐ Contém todas as seções obrigatórias listadas no requisito 6
-- ☐ Lista pelo menos 1 ferramenta de IA utilizada
-- ☐ Mostra pelo menos 2 prompts customizados em blocos de código
-- ☐ Descreve pelo menos 2 iterações ou ajustes concretos feitos durante a produção
-
-### Consistência geral
-
-- ☐ Nenhum requisito, decisão ou restrição registrada nos documentos contradiz a transcrição ou o código
-- ☐ Nenhum arquivo de código mencionado nos documentos é inexistente no repositório
-
----
-
-## Estrutura obrigatória do entregável
-
-```
-.
-├── README.md                              (substituído pelo aluno)
-├── TRANSCRICAO.md                         (não alterar)
-├── docs/
-│   ├── PRD.md                             (preenchido pelo aluno)
-│   ├── RFC.md                             (preenchido pelo aluno)
-│   ├── FDD.md                             (preenchido pelo aluno)
-│   ├── TRACKER.md                         (preenchido pelo aluno)
-│   └── adrs/
-│       ├── ADR-001-titulo-curto.md
-│       ├── ADR-002-titulo-curto.md
-│       ├── ADR-003-titulo-curto.md
-│       ├── ADR-004-titulo-curto.md
-│       ├── ADR-005-titulo-curto.md
-│       └── ... (até 8 ADRs)
-├── src/                                   (não alterar)
-├── prisma/                                (não alterar)
-├── tests/                                 (não alterar)
-└── ... (demais arquivos do boilerplate)
+Salve o resultado em `docs/SUMMARY.md`, em secoes para cada tipo de ponto, com uma breve
+descricao do que sao aqueles pontos. Observacoes sobre outros pontos que nao se encaixem
+nas categorias, ou sobre os pontos e categorias, vem no final do arquivo, sempre linkadas
+a fonte de onde a informacao foi extraida.
 ```
 
-A entrega deve ser feita como repositório público no GitHub, a partir de fork do repositório base do desafio.
+**2. Mapeamento do código e análise de componentes:**
 
-## Repositório base
+```text
+/project-analizer:generate-architectural-report
+```
 
-O repositório base do desafio contém a aplicação completa, a transcrição e a estrutura de pastas pra você preencher:
+O comando executa seis fases: cria `MANIFEST.md`; roda em paralelo a auditoria de dependências e a análise de arquitetura; roda em paralelo uma análise profunda por componente identificado; valida os arquivos gerados; e escreve o `PROJECT-OVERVIEW` e o `README` de índice. Usei os parâmetros padrão (projeto inteiro, saída em `docs/agents`).
 
-https://github.com/devfullcycle/mba-ia-desafio-design-docs-com-ia
+**3. Geração de um plano para a geracao dos documentos** (reconstituição resumida dos pedidos desta etapa, não o texto literal):
 
-## Ordem de execução sugerida
+```text
+Com base no docs/SUMMARY.md, na TRANSCRICAO.md, nos relatorios do architectural-analyzer
+e do component-deep-analyzer, elabore um plano para gerar os documentos do ENUNCIADO.md,
+em ordem logica considerando a dependencia entre eles e seguindo os templates em
+docs/templates/.
+```
 
-1. **Fork e setup**: faça o fork do repositório base e clone localmente.
-2. **Contextualização com IA**: forneça à IA acesso ao código (via Claude Code, Cursor lendo o repo, ou colando trechos relevantes) e à transcrição. Peça uma exploração inicial para entender estrutura, padrões e o que a feature precisa endereçar.
-3. **ADRs primeiro**: identifique e produza as decisões principais antes dos demais documentos. As decisões formam o esqueleto do "como implementar".
-4. **RFC**: consolide a proposta técnica em cima das decisões. As alternativas descartadas e as questões em aberto da reunião têm lugar natural aqui. Referencie os ADRs já escritos.
-5. **FDD**: com as decisões formalizadas e a proposta consolidada, o desenho técnico se constrói em cima delas. Lembre da seção obrigatória "Integração com o sistema existente".
-6. **PRD**: produza o PRD por último entre os grandes documentos. Como ele é mais alto nível, com RFC, FDD e ADRs em mãos vira praticamente uma consolidação.
-7. **Tracker**: monte em paralelo com os outros documentos ou no fim, varrendo os documentos prontos.
-8. **README do processo**: deixe por último, quando o processo já está completo e você pode documentá-lo com clareza.
-9. **Revisão final**: passe pela checklist de critérios de aceite item por item antes do push final.
-10. **Itere**: é esperado que o processo demande 3 a 5 ciclos de geração, revisão crítica, ajuste de prompt e nova geração. Se você gerou tudo de primeira sem ajustes, os documentos provavelmente estão genéricos demais.
+**4: Geracao dos documentos com base no plano, seguindo a ordem sugerida**;
 
-## Dicas Finais
+**5. Centralização das referências no Tracker** (reconstituição resumida do pedido da segunda passada, não o texto literal):
 
-A qualidade do prompt determina a qualidade do documento. Prompts vagos do tipo "gere um PRD a partir dessa transcrição" produzem documentos vazios e genéricos. Aproveite os prompts disponibilizados pelo professor no curso como base e adapte-os ao contexto deste desafio.
+```text
+Simplifique um pouco os documentos gerados: deixe as referencias para a origem dos pontos
+centralizadas no TRACKER, conectando identificadores (introduzidos nos documentos concretos
+[PRD, FDD, RFC e ADRs]) com a origem, mantendo os formatos atuais para referenciar linhas
+da transcricao e o codigo fonte.
+```
 
-O tracker é seu melhor aliado contra alucinações da IA. Se você não consegue preencher a coluna "Localização" para uma linha do PRD ou do FDD, é sinal de que aquela informação não tem origem identificável e provavelmente foi inventada pela IA. Ajuste ou remova.
+## Iterações e ajustes
 
-Cuidado com o que NÃO entra na documentação. A reunião descarta explicitamente algumas ideias. Se essas coisas aparecerem como requisito nos seus documentos, é sinal de que a IA não está sendo cuidadosa com o que você pediu.
+O enunciado espera de 3 a 5 ciclos de geração e revisão. Aqui houve uma passada principal de geração por documento, seguida de uma passada de verificação automatizada e de correções pontuais. Ajustes concretos:
 
-A restrição de não alterar o código da aplicação é absoluta: o código serve de contexto e referência, e o entregável é puramente documental.
+- **Instalação do plugin:** a primeira tentativa usou o nome de marketplace `devfullcycle` e falhou (`Marketplace "devfullcycle" not found`). O nome correto é o que o `marketplace add` registrou: `fullcycle-claude-marketplace`.
+- **Limite de subagentes:** o comando de análise tentou disparar 23 agentes de componente em paralelo, mas o limite é de 20 simultâneos. Três análises (Seed Script, Test Suite e MySQL Container) só rodaram depois que outras terminaram, e o `MANIFEST.md` foi atualizado à mão durante a espera.
+- **Verificação de links com falha de método:** meu primeiro script de checagem de links tratou os espaços dos nomes de arquivo (`... 2026-10-29 14:55:48.md`) como separadores e reportou dezenas de arquivos "faltando". Refiz a checagem lendo linha a linha, e os 51 links passaram.
+- **Links do SUMMARY:** os links foram escritos como `../TRANSCRICAO.md#L<n>`, e não como `TRANSCRICAO.md#L<n>` do exemplo, porque o arquivo está em `docs/`.
+- **Templates com defeitos:** o template de FDD tinha um bloco de código solto e uma frase de chat no final, além de não ter as seções "Matriz de erros `WEBHOOK_*`" e "Integração com o sistema existente", exigidas pelo enunciado. Corrigi isso na geração do FDD, sem tocar nos arquivos de template.
+- **Datas:** a data do template de RFC chegou a ser alterada. A orientação passou a ser não mexer nos templates, então a edição foi revertida e usei a data de hoje (2026-10-29) apenas nos documentos gerados.
+- **Lacunas que a IA não deveria preencher sozinha:** em vez de inventar decisões, registrei como premissas ou questões em aberto: a contagem das 5 tentativas, a secret usada durante a rotação de 24h, onde guardar o histórico de entregas, o armazenamento da secret e a recuperação de eventos presos em `processando`. Uma dessas lacunas surgiu na releitura: o retry pode inverter a ordem de eventos do mesmo pedido (RFC Q-09 e FDD seção 14).
+- **Decisões sobre as lacunas:** resolvi as lacunas em 4 rodadas de perguntas, com opções ordenadas da mais para a menos recomendada, e cheguei a aplicar as decisões nos documentos. A aplicação foi revertida a pedido, e as decisões ficaram registradas na seção "Caminhos sugeridos para as lacunas", abaixo, sem alterar os documentos de design.
+- **Referências espalhadas pelo texto (segunda passada de refatoração):** na primeira versão, cada frase do PRD, do RFC, do FDD e dos ADRs carregava citações da transcrição (`[09:17] Diego, [L108](...)`), o que poluía a leitura e duplicava o que o Tracker já fazia. A segunda passada moveu toda a origem para o [`docs/TRACKER.md`](docs/TRACKER.md): um script atribuiu IDs sequenciais por seção (`PRD-FR-01`, `RFC-Q-03`, `FDD-CONTRATO-02`, `ADR-003-D1`...), extraiu as citações de cada item para montar as linhas do Tracker e as removeu do texto. O Tracker passou de 222 para 326 linhas, e os formatos foram mantidos: `[hh:mm] Nome` com o link `[Ln](../TRANSCRICAO.md#Ln)` para a transcrição, e o caminho do arquivo para o código. Os requisitos do PRD deixaram de se chamar `RF-001` e passaram a `PRD-FR-01`, e as premissas do FDD, de `P-01` para `FDD-PRM-01`. O script deixou frases órfãs (por exemplo, "Requisito:." nos endpoints do FDD e um ponto duplo em um ADR), que corrigi à mão, além de uma coluna "Origem" que precisou ser removida das tabelas do FDD. Itens sem origem identificável não receberam ID. Ao final, conferi que todos os IDs dos documentos têm linha no Tracker e vice-versa, e que nenhum documento ficou com citação de timestamp.
+- **Erro de formatação:** uma linha em branco inserida no meio da tabela de questões em aberto do RFC quebrava a tabela. Foi encontrada ao conferir o arquivo e corrigida.
+- **Erros de texto:** typos no PRD e no Tracker ("pedintes", "o quem fez") apareceram na releitura e foram corrigidos.
 
-Itere bastante. Os primeiros documentos que a IA gerar provavelmente serão superficiais ou redundantes. Volte com correções, peça refinamento de pontos específicos, peça para remover trechos vagos, peça exemplos concretos. O resultado final deve parecer escrito por alguém que pensou no problema com a IA ao lado, não por alguém que copiou e colou da transcrição.
+Resultado da verificação automatizada ao final: 326 identificadores nos documentos e 326 linhas no Tracker, sem nenhum de um lado só. Dessas linhas, 286 (88%) têm fonte `TRANSCRICAO`, todas com `[hh:mm] Nome` e linha existentes na transcrição, e 40 têm fonte `CODIGO`, todas com caminho de arquivo real. Os documentos não têm mais nenhuma citação de timestamp ou link de linha no texto. Há 13 requisitos funcionais no PRD e 8 ADRs com todas as seções. Os únicos caminhos `src/` citados que não existem no repositório são os que a feature vai criar (`src/worker.ts`, `src/modules/webhooks/*`), marcados como "a criar".
+
+## Caminhos sugeridos para as lacunas
+
+Os documentos de design mantêm como premissas ou questões em aberto os pontos que a reunião não decidiu (`RFC-Q-06` a `RFC-Q-09` e `FDD-PRM-01` a `FDD-PRM-07`, além de alguns detalhes marcados como derivação técnica). Para cada um, levantei opções, ordenei da mais para a menos recomendada e escolhi o caminho abaixo. **Esses caminhos não foram aplicados nos documentos**: são o ponto de partida sugerido para quando o time confirmar as decisões, e a última coluna diz o que mudaria em cada documento se forem adotados.
+
+| # | Lacuna (onde aparece) | Caminho sugerido | Outras opções consideradas | Se adotado, mudaria |
+| --- | --- | --- | --- | --- |
+| 1 | Contagem das "5 tentativas" (`RFC-Q-06`, `FDD-PRM-01`, `ADR-003`) | Envio inicial + 5 retries (6 envios no total), nos intervalos 1m/5m/30m/2h/12h; a DLQ recebe o evento na 6ª falha. É a única leitura que bate com a janela de ~15h dita por Diego | 5 envios no total, só com os 4 primeiros intervalos (janela de ~2h36, contradiz a reunião) | `ADR-003`, `FDD` (fluxos C e D, parâmetros), `PRD-FR-09` e `PRD-OBJ-04` |
+| 2 | Retry pode inverter a ordem de eventos do mesmo pedido (`RFC-Q-09`, `FDD-RSK-02`) | Aceitar e documentar; o cliente reordena com `timestamp`, `from_status` e `to_status`, que já estão no payload | Aceitar e acrescentar um número de sequência por pedido no payload; bloquear os eventos seguintes do pedido (quebraria o requisito de menos de 10s) | `ADR-002`, `RFC` (riscos), `FDD` (risco), `PRD-RSK-05` |
+| 3 | Payload acima de 64KB (`FDD-PRM-04`, `FDD-ERR-04`) | O worker verifica na hora do envio, não envia, não faz retry e move para a DLQ com `WEBHOOK_PAYLOAD_TOO_LARGE`; a mudança de status do pedido nunca falha por isso | Rollback da mudança de status (segue "erra" ao pé da letra); descartar com log (perde o evento sem rastro) | `FDD` (fluxo B, matriz de erros: o código vira interno do worker), `ADR-003`, `PRD-FR-12` |
+| 4 | Eventos presos em `PROCESSING` se o worker cair (`FDD-PRM-06`, `FDD-RSK-04`) | Ao iniciar, o worker devolve `PROCESSING` para `PENDING`; é seguro porque há um único worker, e o reenvio é coberto pelo at-least-once | Lease com `locked_until`; não tratar nesta fase | `ADR-002`, `ADR-001` (consequências), `FDD` (resiliência, risco) |
+| 5 | Qual secret assina durante o grace de 24h (`RFC-Q-07`, `FDD-PRM-02`) | `X-Signature` com duas assinaturas separadas por vírgula (nova e antiga); depois das 24h, uma só | Header extra `X-Signature-Previous`; assinar só com a antiga até o fim do grace (quem já migrou falharia) | `ADR-004`, `FDD` (fluxo E, headers, exemplo de verificação), `PRD-FR-06` e `PRD-FR-07` |
+| 6 | Como armazenar a secret (`RFC-Q-07`, `FDD-PRM-05`) | Cifrada em repouso com AES-256-GCM (`node:crypto`), com a chave em variável de ambiente validada em `src/config/env.ts` | Texto claro no banco (um dump expõe todas as secrets) | `ADR-004`, `FDD` (modelo de dados, parâmetros, integração com `env.ts`, novo risco da chave de cifra), `RFC` (impacto), `PRD-DEP-03` |
+| 7 | O replay muda o `event_id`? (`FDD-PRM-07`) | Mantém o `event_id` e o payload originais e zera as tentativas, para o cliente deduplicar normalmente | Gerar um novo `event_id` (o cliente processaria o mesmo conteúdo duas vezes) | `ADR-003`, `ADR-005`, `FDD` (fluxo D, contrato do replay), `PRD-FR-10` |
+| 8 | Onde guardar o histórico de entregas (`RFC-Q-08`, `FDD-PRM-03`) | Tabela `webhook_deliveries`, uma linha por tentativa, com resposta truncada (ex.: 4KB) | Colunas só da última tentativa na outbox; derivar de outbox + DLQ (não tem `response` nem tempo) | `FDD` (modelo de dados, contrato de deliveries), `RFC` (impacto) |
+| 9 | Autorização por customer: o CRUD aceita qualquer role e o `customerId` vem do body (`FDD-RSK-07`, `ADR-008`) | Manter como decidido, como risco aceito, e endurecer na próxima fase; sem mudar o schema de `users` | Vincular usuário a customer (muda `User` e o JWT); restringir o CRUD a `ADMIN` | `ADR-008` (consequências), `FDD` (risco) |
+| 10 | Gatilho de `WEBHOOK_SECRET_REQUIRED` (`FDD-ERR-03`) | Erro interno do worker quando a secret não existe ou não pode ser decifrada; DLQ direta, sem retry | Retirar o código da matriz; devolver 400 se o cliente enviar `secret` | `FDD` (matriz de erros) |
+| 11 | Eventos pendentes de um webhook removido ou inativo (`FDD-FLX-04`) | Vão para a DLQ com `WEBHOOK_INACTIVE`, sem retry, permitindo replay se o webhook voltar | Descartar os pendentes; continuar enviando os já enfileirados | `FDD` (fluxo D, matriz de erros), `ADR-003` |
+| 12 | Caminho da rotação de secret (`FDD-CONTRATO-05`) | `POST /webhooks/:id/secret/rotate` (o que já está no FDD) | `POST /webhooks/:id/rotate-secret`; `PATCH` com um flag | Nenhuma mudança |
+| 13 | Semântica do `DELETE /webhooks/:id` (consequência do item 11) | Remoção física, com as tabelas de eventos guardando `webhook_id` sem chave estrangeira | Remoção lógica (`active=false`) | `FDD` (contrato do `DELETE`, modelo de dados), `ADR-001` (consequências) |
+| 14 | Critério de sucesso do envio (`FDD-FLX-02`) | Qualquer resposta 2xx; redirects não são seguidos, para não enviar o payload assinado a outro host | Somente 200 | `FDD` (fluxo B), `ADR-003` |
+
+Pontos a validar com o time antes de adotar: a chave de cifra do item 6 cria um ponto novo para a revisão de segurança da Sofia e uma nova variável de ambiente; e o item 13 deixa a integridade referencial das tabelas de eventos por conta do código.
+
+## Como navegar a entrega
+
+Ordem sugerida de leitura:
+
+1. [`docs/PRD.md`](docs/PRD.md): por que e o quê (problema, escopo, requisitos funcionais, métricas, riscos).
+2. [`docs/RFC.md`](docs/RFC.md): proposta técnica de alto nível, alternativas descartadas e questões em aberto, submetida a revisão.
+3. [`docs/adrs/`](docs/adrs/README.md): cada decisão fechada, com contexto, alternativas e consequências:
+   - [ADR-001](docs/adrs/ADR-001-outbox-no-mysql.md) outbox no MySQL
+   - [ADR-002](docs/adrs/ADR-002-worker-separado-polling.md) worker separado em polling
+   - [ADR-003](docs/adrs/ADR-003-retry-backoff-e-dlq.md) retry com backoff e DLQ
+   - [ADR-004](docs/adrs/ADR-004-hmac-sha256-secret-por-endpoint.md) HMAC-SHA256 com secret por endpoint
+   - [ADR-005](docs/adrs/ADR-005-at-least-once-x-event-id.md) at-least-once com `X-Event-Id`
+   - [ADR-006](docs/adrs/ADR-006-reuso-padroes-do-projeto.md) reuso dos padrões do projeto
+   - [ADR-007](docs/adrs/ADR-007-publicacao-na-transacao-do-changestatus.md) publicação dentro da transação do `changeStatus`
+   - [ADR-008](docs/adrs/ADR-008-autorizacao-crud-e-replay-admin.md) autorização do CRUD e do replay
+4. [`docs/FDD.md`](docs/FDD.md): como construir, em detalhe (fluxos, contratos HTTP, matriz de erros `WEBHOOK_*`, observabilidade e a seção "Integração com o sistema existente").
+5. [`docs/TRACKER.md`](docs/TRACKER.md): de onde veio cada item. Os documentos anteriores só carregam os identificadores; a fala da reunião (`[hh:mm] Nome` e link para a linha) ou o arquivo do código de cada um fica aqui.
+
+Material de apoio ao processo:
+- [`docs/SUMMARY.md`](docs/SUMMARY.md): extração classificada da transcrição, com as lacunas observadas.
+- [`docs/agents/`](docs/agents/): relatórios de arquitetura, dependências e componentes, com `MANIFEST.md`.
+- [`docs/templates/`](docs/templates/): templates usados na geração.
+- [`TRANSCRICAO.md`](TRANSCRICAO.md): transcrição original, sem alterações.
